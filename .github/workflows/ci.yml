@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+
+# Cancel older runs of the same branch to save minutes
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend - install and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # Enable once package-lock.json is committed:
+          # cache: npm
+          # cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run tests
+        run: npm test
+
+  frontend:
+    name: Frontend - install and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+
+  docker:
+    name: Docker - build images and smoke test
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: docker compose build
+
+      - name: Start the stack
+        run: docker compose up -d
+
+      - name: Wait for the API to become healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/api/health; then
+              echo; echo "API is up"; exit 0
+            fi
+            echo "Waiting for the stack ($i/30)..."; sleep 4
+          done
+          docker compose ps
+          docker compose logs --tail=100
+          exit 1
+
+      - name: Check the database is connected
+        run: curl -fsS http://localhost:8080/api/health | grep '"database":"connected"'
+
+      - name: Check the frontend is served
+        run: curl -fsS http://localhost:8080/ | grep -qi "UniFind"
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  publish:
+    name: Publish images to Docker Hub
+    runs-on: ubuntu-latest
+    needs: docker
+    # Runs only on main and only when the repository variable PUBLISH_IMAGES is "true".
+    # Also add secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN in the repository settings.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.PUBLISH_IMAGES == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/unifind-backend:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/unifind-backend:${{ github.sha }}
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/unifind-frontend:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/unifind-frontend:${{ github.sha }}
