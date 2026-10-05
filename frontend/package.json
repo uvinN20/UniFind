@@ -1,0 +1,13 @@
+{
+  "name": "unifind-frontend",
+  "version": "1.0.0",
+  "description": "UniFind frontend application",
+  "private": true,
+  "scripts": {
+    "build": "echo 'Build script placeholder'",
+    "test": "echo 'Test script placeholder'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
