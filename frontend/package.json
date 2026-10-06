@@ -1,17 +1,5 @@
 {
   "name": "unifind-frontend",
-<<<<<<< Updated upstream
-  "version": "1.0.0",
-  "description": "UniFind frontend application",
-  "private": true,
-  "scripts": {
-    "build": "echo 'Build script placeholder'",
-    "test": "echo 'Test script placeholder'"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
-=======
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -29,5 +17,4 @@
     "@vitejs/plugin-react": "^4.3.3",
     "vite": "^5.4.10"
   }
->>>>>>> Stashed changes
 }
